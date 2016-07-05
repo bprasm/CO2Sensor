@@ -13,6 +13,7 @@
 # (http://creativecommons.org/licenses/by-sa/3.0/)           
 #
 ########################################################################
+#In order to get /dev/ttys0 to open, you need to have both "cd" and "setserial" packages installed.
 import os
 import serial, time
 import math
