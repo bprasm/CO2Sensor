@@ -13,7 +13,8 @@
 # (http://creativecommons.org/licenses/by-sa/3.0/)           
 #
 ########################################################################
-#In order to get /dev/ttys0 to open, you need to have both "cd" and "setserial" packages installed.
+#In order to get /dev/ttys0 to open, you need to have both "cd" and "setserial" packages installed, then do command
+#"sudo chmod o+rw /dev/ttyS0"
 import os
 import serial, time
 import math
