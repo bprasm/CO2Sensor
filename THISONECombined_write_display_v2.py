@@ -1,8 +1,4 @@
-#!/usr/bin/env python
-
-
-# Written by Limor "Ladyada" Fried for Adafruit Industries, (c) 2015
-# This code is released into the public domain
+import pigpio
 import os
 import serial
 import struct
@@ -14,9 +10,66 @@ import time
 import os
 import math
 import RPi.GPIO as GPIO
+from time import sleep
+
 GPIO.setwarnings(False)
+
+
+RX=16
+
+INTERVAL=30000000
+
+start_tick = None
+last_tick = None
+low_ticks = 0
+high_ticks = 0
+
 GPIO.setmode(GPIO.BCM)
 DEBUG = 1
+
+###DUST SENSOR CODE BEGIN###
+def results(interval):
+   global low_ticks, high_ticks
+   if interval != 0:
+      ratio = float(low_ticks)/float(interval)*10.0
+      conc = 1.1*pow(ratio,3)-3.8*pow(ratio,2)+520*ratio+0.62;
+      print("[Ratio, pcs/0.01cf]") 
+      print("{:.1f}, {}".format(ratio, int(conc)))
+      dust = open("ds_dust", "w")
+      dust.write("Ratio,pcs/0.01cf\n")
+      dust.write("{:.1f}, {}".format(ratio, int(conc)))
+      dust.close()
+      time.sleep(1)
+      
+
+def cbf(gpio, level, tick):
+   global start_tick, last_tick, low_ticks, high_ticks, run
+   if start_tick is not None:
+      ticks = pigpio.tickDiff(last_tick, tick)
+      last_tick = tick
+      if level == 0: # Falling edge.
+         high_ticks = high_ticks + ticks
+      else: # Rising edge.
+         low_ticks = low_ticks + ticks
+      interval = pigpio.tickDiff(start_tick, tick)
+      if interval >= INTERVAL:
+         results(interval)
+         start_tick = tick
+         last_tick = tick
+         low_ticks = 0
+         high_ticks = 0
+   else:
+      start_tick = tick
+      last_tick = tick
+
+
+####DUST SENSOR CODE END###
+      
+pi = pigpio.pi() # Connect to local Pi.
+
+pi.set_mode(RX, pigpio.INPUT)
+
+cb = pi.callback(RX, pigpio.EITHER_EDGE, cbf)
 
 # read SPI data from MCP3008 chip, 8 possible adc's (0 thru 7)
 def readadc(adcnum, clockpin, mosipin, misopin, cspin):
@@ -54,13 +107,12 @@ def readadc(adcnum, clockpin, mosipin, misopin, cspin):
         return adcout
 
 #co2 sensor
-#use an external usb to serial adapter
 ser = serial.Serial('/dev/ttyS0',  9600, timeout = 1)	#Open the serial port at 9600 baud
 
 #init serial
 ser.flush()
 
-############# carbon dioxid CO2 #####################
+############# carbon dioxide CO2 #####################
 class CO2:
 #inspired from c code of http://www.seeedstudio.com/wiki/Grove_-_CO2_Sensor
 #Gas concentration= high level *256+low level
@@ -120,84 +172,51 @@ gas_sensor = 0;
 o2_sensor = 1;
 c = CO2()
 
-import time
-import pigpio
 
-RX=16
-
-INTERVAL=30000000
-
-start_tick = None
-last_tick = None
-low_ticks = 0
-high_ticks = 0
-
-def results(interval):
-   global low_ticks, high_ticks
-   if interval != 0:
-      ratio = float(low_ticks)/float(interval)*10.0
-      conc = 1.1*pow(ratio,3)-3.8*pow(ratio,2)+520*ratio+0.62;
-      print("{:.1f} {}".format(ratio, int(conc)))
-
-def cbf(gpio, level, tick):
-   global start_tick, last_tick, low_ticks, high_ticks, run
-   if start_tick is not None:
-      ticks = pigpio.tickDiff(last_tick, tick)
-      last_tick = tick
-      if level == 0: # Falling edge.
-         high_ticks = high_ticks + ticks
-      else: # Rising edge.
-         low_ticks = low_ticks + ticks
-      interval = pigpio.tickDiff(start_tick, tick)
-      if interval >= INTERVAL:
-         results(interval)
-         start_tick = tick
-         last_tick = tick
-         low_ticks = 0
-         high_ticks = 0
-   else:
-      start_tick = tick
-      last_tick = tick
-     
-pi = pigpio.pi() # Connect to local Pi.
-
-pi.set_mode(RX, pigpio.INPUT)
-
-cb = pi.callback(RX, pigpio.EITHER_EDGE, cbf)
-#########################START OF PROCESS###################
+#########||||||||||******#       START OF PROCESS     #******||||||||||#########
 while True:
-        # read the analog pin
-        read_gas = readadc(gas_sensor, SPICLK, SPIMOSI, SPIMISO, SPICS)
-        read_o2 = readadc(o2_sensor, SPICLK, SPIMOSI, SPIMISO, SPICS)
-        measuredVout_o2 = read_o2*(3.3/1023)
-        measuredVout_gas = read_gas*(3.3/1023)
-        o2_conc = measuredVout_o2*0.1348
-        o2_percent_conc = o2_conc*100
-     
-       
-
-        if DEBUG:
-                print "Gas:", measuredVout_gas
-                print "O2%:", o2_percent_conc, "%"
-                 
-        try:
-            #CO2 sensor calib
-            time.sleep(0.5)
-            co2 = c.calibrateZero()
-            time.sleep(0.5)
-            print "CO2[ppm, C]:",c.read()
-
-
-        except IndexError:
-            print "Unable to read"
-        except KeyboardInterrupt:
-            print "Exiting"
-            sys.exit(0)
-        # hang out and do nothing for a half second
-        time.sleep(3)
+                read_gas = readadc(gas_sensor, SPICLK, SPIMOSI, SPIMISO, SPICS)
+                read_o2 = readadc(o2_sensor, SPICLK, SPIMOSI, SPIMISO, SPICS)
+                measuredVout_o2 = read_o2*(3.3/1023)
+                measuredVout_gas = read_gas*(3.3/1023)
+                o2_conc = measuredVout_o2*0.1348
+                o2_percent_conc = o2_conc*100
+                print "Reading Gas:", measuredVout_gas
+                localtime = time.asctime( time.localtime(time.time()) )
+                g = open("ds_gas", "w")
+                g.write("Gas Presence (V):\n")
+                g.write(str(measuredVout_gas))
+                g.close()
+                print "Reading % O2:", o2_percent_conc
+                o = open("ds_o2", "w")
+                o.write("Oxygen % Conc:  \n")
+                o.write(str(o2_percent_conc))
+                o.close()
+                try:
+                    co2 = c.calibrateZero()
+                    time.sleep(0.5)
+                    print "CO2[ppm, C]:",c.read()
+                    co = open("ds_co2", "w")
+                    co.write("CO2 [ppm, C]:\n")
+                    co.write(str(c.read()))
+                    co.close()
+                except IndexError:
+                    print "Unable to read"
+                    co = open("ds_co2", "w")
+                    co.write("CO2 sensor error")
+                    co.close()
+                except KeyboardInterrupt:
+                    print "Exiting"
+                    sys.exit(0)
 
 time.sleep(3600)
 
 cb.cancel() # Cancel callback.
 
 pi.stop() # Disconnect from local Pi.
+                
+
+
+
+       
+                
